@@ -4,6 +4,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <string.h>
+#include <sys/io.h>
 
 static void pf(size_t lvl, const char *t, const char *name)
 {
@@ -36,6 +37,29 @@ int sss(size_t lvl, const char *dname)
     return c;
 }
 
+void pr(int tgid) {
+    char path[40], line[100], *p;
+    FILE* statusf;
+
+    snprintf(path, 40, "/proc/%d/status", tgid);
+
+    statusf = fopen(path, "r");
+    if(!statusf)
+        return;
+
+    while(fgets(line, 100, statusf)) {
+        if(strncmp(line, "State:", 6) != 0)
+            continue;
+        // Ignore "State:" and whitespace
+        p = line + 7;
+        while(isspace(*p)) ++p;
+
+        printf("%6d %s", tgid, p);
+        break;
+    }
+    fclose(statusf);
+}
+
 int main(int argc, char *argv[])
 {
     if (argc == 1){
@@ -43,13 +67,19 @@ int main(int argc, char *argv[])
 	exit(1);
     }
     
+    FILE *fpr, *fpw;
+    
+    char ch;
+    
     DIR *opendir(const char *name);
-    struct dirent *pdir;
-    DIR *pd, *pd1;
+    struct dirent *pdir = NULL;
+    DIR *pd = NULL;
     struct stat st;
-    int count = 0;
+    
+    int c = 0;
     
     char *opt = argv[1];
+    
     if(opt[1] == '-')
 	opt[1] = 'h';
     switch(opt[1]){
@@ -77,8 +107,52 @@ int main(int argc, char *argv[])
 		printf("./l2 -s <директория>\n");
 		break;
 	    }
-	    //printf("%s\n\n", argv[2]);
-	    printf("%d\n", sss(0, argv[2]));
+	    stat(argv[2], &st);
+	    if(S_ISDIR(st.st_mode)){
+		printf("%d\n", sss(0, argv[2]));
+	    }else{
+		printf("%ld\n", st.st_size);
+	    }
+	    break;
+	case 'm':
+	    if(argc < 3)
+		printf("./l2 -m <путь к файлу> <пункт назначения файла>\n");
+	    rename(argv[2], argv[3]);
+	    break;
+	case 'c':
+	    if(argc < 3)
+		printf("./l2 -c <путь к файлу> <пункт назначения файла>\n");
+	    if((fpr = fopen(argv[2], "rb")) == NULL){
+		printf("Error\n");
+	    }
+	    if((fpw = fopen(argv[3], "rb")) != NULL){
+		printf("File exist\n");
+		exit(1);
+	    }
+	    if((fpw = fopen(argv[3], "wb")) == NULL){
+		printf("Error 2\n");
+	    }
+	    while((ch = getc(fpr)) != EOF)
+		putc(ch, fpw);
+	    fclose(fpw);
+	    fclose(fpr);
+	    break;
+	case 'd':
+	    if(argc < 2)
+		printf("./l2 -d <путь к файлу>\n");
+	    if(remove(argv[2]))
+		printf("Error\n");
+	    break;
+	case 'p':
+	    pd = opendir("/proc");
+	    if(pd == NULL)
+		printf("Error open proc\n");
+	    while(pdir = readdir(pd)){
+		if(!isdigit(*pdir->d_name))
+		    continue;
+		c = strtol(pdir->d_name, NULL, 10);
+		pr(c);
+	    }
 	    break;
     }
 }
